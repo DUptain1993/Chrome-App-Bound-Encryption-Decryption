@@ -140,12 +140,14 @@ namespace Payload {
             
             if (blob && blobLen > 0) {
                 std::vector<uint8_t> encrypted((uint8_t*)blob, (uint8_t*)blob + blobLen);
-                auto decrypted = Crypto::AesGcm::Decrypt(m_key, encrypted);
+                bool isV10 = false;
+                auto decrypted = Crypto::AesGcm::Decrypt(m_key, encrypted, &isV10);
                 
                 if (decrypted && !decrypted->empty()) {
-                    // Chrome cookies have a 32-byte header after decryption; Brave may not
+                    // v20 (App-Bound Encryption) cookies carry a 32-byte metadata header before
+                    // the actual value; v10 (legacy DPAPI-backed) cookies do not.
                     std::string val;
-                    if (decrypted->size() > 32) {
+                    if (!isV10 && decrypted->size() > 32) {
                         val = std::string((char*)decrypted->data() + 32, decrypted->size() - 32);
                     } else {
                         val = std::string((char*)decrypted->data(), decrypted->size());

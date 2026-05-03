@@ -12,15 +12,21 @@
 
 namespace Crypto {
 
-    std::optional<std::vector<uint8_t>> AesGcm::Decrypt(const std::vector<uint8_t>& key, const std::vector<uint8_t>& encryptedData) {
-        // Format: v20 + IV(12) + Ciphertext + Tag(16)
-        constexpr size_t PREFIX_LEN = 3; // "v20"
+    std::optional<std::vector<uint8_t>> AesGcm::Decrypt(const std::vector<uint8_t>& key, const std::vector<uint8_t>& encryptedData, bool* isLegacyV10) {
+        // Format: <prefix>(3) + IV(12) + Ciphertext + Tag(16)
+        // Accepted prefixes: "v20" (App-Bound Encryption) and "v10" (legacy DPAPI-backed)
+        constexpr size_t PREFIX_LEN = 3;
         constexpr size_t IV_LEN = 12;
         constexpr size_t TAG_LEN = 16;
         constexpr size_t OVERHEAD = PREFIX_LEN + IV_LEN + TAG_LEN;
 
         if (encryptedData.size() < OVERHEAD) return std::nullopt;
-        if (memcmp(encryptedData.data(), "v20", PREFIX_LEN) != 0) return std::nullopt;
+
+        bool v20 = (memcmp(encryptedData.data(), "v20", PREFIX_LEN) == 0);
+        bool v10 = (memcmp(encryptedData.data(), "v10", PREFIX_LEN) == 0);
+        if (!v20 && !v10) return std::nullopt;
+
+        if (isLegacyV10) *isLegacyV10 = v10;
 
         BCRYPT_ALG_HANDLE hAlg = nullptr;
         if (!NT_SUCCESS(BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_AES_ALGORITHM, nullptr, 0))) return std::nullopt;

