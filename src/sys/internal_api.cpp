@@ -80,7 +80,6 @@ namespace Sys {
         constexpr uint32_t H_ZwOpenKey                 = djb2_hash("ZwOpenKey");
         constexpr uint32_t H_ZwQueryValueKey           = djb2_hash("ZwQueryValueKey");
         constexpr uint32_t H_ZwEnumerateKey            = djb2_hash("ZwEnumerateKey");
-        constexpr uint32_t H_ZwQuerySyste              = djb2_hash("ZwQuerySyste");
         constexpr uint32_t H_ZwQuerySystemInformation  = djb2_hash("ZwQuerySystemInformation");
         constexpr uint32_t H_ZwDuplicateObject         = djb2_hash("ZwDuplicateObject");
         constexpr uint32_t H_ZwQueryObject             = djb2_hash("ZwQueryObject");

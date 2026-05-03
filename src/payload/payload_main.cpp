@@ -86,7 +86,7 @@ DWORD WINAPI PayloadThread(LPVOID lpParam) {
         PipeClient pipe(pipeName);
         if (!pipe.IsValid()) {
             FreeLibraryAndExitThread(hModule, 0);
-            return 1;
+            // FreeLibraryAndExitThread does not return
         }
 
         try {

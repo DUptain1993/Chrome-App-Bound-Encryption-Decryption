@@ -79,5 +79,4 @@ namespace Core {
 // Macro that creates unique seed from line number
 #define OBF(str) (::Core::make_obfuscated(str, __LINE__ * 0x85EBCA77C2B2AE63ULL))
 
-// For wide strings
-#define WOBF(str) (::Core::make_obfuscated_w(str, __LINE__ * 0x85EBCA77C2B2AE63ULL))
+// Note: wide-string obfuscation (WOBF) is not yet implemented.

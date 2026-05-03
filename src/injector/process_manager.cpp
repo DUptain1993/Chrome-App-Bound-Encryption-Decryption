@@ -56,16 +56,25 @@ namespace Injector {
             throw std::runtime_error("Invalid PE: bad DOS signature");
         }
 
-        SetFilePointer(hFile, dosHeader.e_lfanew, nullptr, FILE_BEGIN);
+        if (SetFilePointer(hFile, dosHeader.e_lfanew, nullptr, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+            CloseHandle(hFile);
+            throw std::runtime_error("Invalid PE: failed to seek to NT headers");
+        }
         DWORD ntSig = 0;
-        ReadFile(hFile, &ntSig, sizeof(ntSig), &bytesRead, nullptr);
+        if (!ReadFile(hFile, &ntSig, sizeof(ntSig), &bytesRead, nullptr)) {
+            CloseHandle(hFile);
+            throw std::runtime_error("Invalid PE: failed to read NT signature");
+        }
         if (ntSig != IMAGE_NT_SIGNATURE) {
             CloseHandle(hFile);
             throw std::runtime_error("Invalid PE: bad NT signature");
         }
 
         IMAGE_FILE_HEADER fileHeader{};
-        ReadFile(hFile, &fileHeader, sizeof(fileHeader), &bytesRead, nullptr);
+        if (!ReadFile(hFile, &fileHeader, sizeof(fileHeader), &bytesRead, nullptr)) {
+            CloseHandle(hFile);
+            throw std::runtime_error("Invalid PE: failed to read file header");
+        }
         CloseHandle(hFile);
 
         m_arch = fileHeader.Machine;
