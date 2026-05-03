@@ -26,7 +26,8 @@ namespace Crypto {
         bool v10 = (memcmp(encryptedData.data(), "v10", PREFIX_LEN) == 0);
         if (!v20 && !v10) return std::nullopt;
 
-        if (isLegacyV10) *isLegacyV10 = v10;
+        // Initialize out-param to false; it is only set to true on a successful v10 decrypt.
+        if (isLegacyV10) *isLegacyV10 = false;
 
         BCRYPT_ALG_HANDLE hAlg = nullptr;
         if (!NT_SUCCESS(BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_AES_ALGORITHM, nullptr, 0))) return std::nullopt;
@@ -62,6 +63,8 @@ namespace Crypto {
         }
 
         plain.resize(outLen);
+        // Decryption succeeded — now safe to report the actual prefix to the caller.
+        if (isLegacyV10) *isLegacyV10 = v10;
         return plain;
     }
 
