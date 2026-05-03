@@ -377,10 +377,8 @@ extern "C" DLLEXPORT ULONG_PTR WINAPI Bootstrap(LPVOID lpParameter) {
 #if defined(_M_X64)
     ULONG_PTR seed = __rdtsc();
 #elif defined(_M_ARM64)
-    LARGE_INTEGER perfCounter;
-    perfCounter.QuadPart = 0;
-    // Fallback: use base address as seed if no perf counter
-    ULONG_PTR seed = newBaseAddr ^ reinterpret_cast<ULONG_PTR>(&seed);
+    // Use base address XORed with stack address as entropy seed
+    ULONG_PTR seed = newBaseAddr ^ reinterpret_cast<ULONG_PTR>(&newBaseAddr);
 #else
     ULONG_PTR seed = reinterpret_cast<ULONG_PTR>(&seed);
 #endif
