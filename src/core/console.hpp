@@ -103,6 +103,20 @@ namespace Core {
             SetConsoleTextAttribute(m_hConsole, m_origAttrs);
         }
 
+        // Legacy DPAPI Key display
+        void DpapiKeyDecrypted(const std::string& keyHex) const {
+            SetConsoleTextAttribute(m_hConsole, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
+            std::cout << "  │" << std::endl;
+            std::cout << "  │ ";
+            SetConsoleTextAttribute(m_hConsole, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY);
+            std::cout << "Legacy DPAPI Encryption Key (v10)" << std::endl;
+            SetConsoleTextAttribute(m_hConsole, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
+            std::cout << "  │ ";
+            SetConsoleTextAttribute(m_hConsole, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY);
+            std::cout << keyHex << std::endl;
+            SetConsoleTextAttribute(m_hConsole, m_origAttrs);
+        }
+
         // Copilot ABE Key display (Edge only)
         void AsterKeyDecrypted(const std::string& keyHex) const {
             SetConsoleTextAttribute(m_hConsole, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);

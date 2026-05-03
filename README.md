@@ -63,13 +63,17 @@ This tool's effectiveness is rooted in a combination of modern, evasion-focused 
 
 | Browser                    | Tested Version (x64 & ARM64) |
 | -------------------------- | ---------------------------- |
-| **Google Chrome**          | 144.0.7559.133               |
+| **Google Chrome**          | 145.0.7632.160               |
 | **Google Chrome Beta**     | 145.0.7632.18                |
 | **Brave**                  | 1.86.148 (144.1.86.148)      |
-| **Microsoft Edge**         | 145.0.3800.36                |
-| **Avast Secure Browser**   | 143.0.33371.147              |
+| **Microsoft Edge**         | 146.0.3856.84                |
+| **Avast Secure Browser**   | 144.0.33853.133              |
 
 > **Note:** Chrome/Brave/Edge 144+ use the new `IElevator2` COM interface. This tool automatically uses `IElevator2` when available and falls back to `IElevator` for older versions. Avast Secure Browser uses a custom `IElevatorChrome` interface with an extended vtable (12 methods, DecryptData at offset 104).
+>
+> **Legacy DPAPI support (v0.21.0+):** When App-Bound Encryption is disabled on a system (e.g. via Group Policy), the tool automatically falls back to decrypting the legacy DPAPI-backed key (`encrypted_key` in Local State) and extracts `v10`-prefixed data. Payment methods and cookies saved before ABE was enabled (pre-Chrome 127) are also decrypted via this path.
+>
+> **Chrome 147 / DBSC:** Chrome 147 introduced Device Bound Session Credentials (DBSC), which binds HTTP-level authentication sessions to the device's TPM chip. DBSC operates at the network-session layer and does **not** change the on-disk ABE encryption format (`v20` blobs, `app_bound_encrypted_key`). Stored cookies, passwords, and payment methods remain decryptable with this tool. If you encounter issues with Chrome 147, please open an issue with the exact error output (run with `--verbose`).
 
 ## 🔍 Feature Support Matrix
 
@@ -77,11 +81,13 @@ This matrix outlines the extraction capabilities for each supported browser.
 
 | Feature              | Google Chrome          | Microsoft Edge         | Brave                  | Avast Secure Browser   |
 |----------------------|------------------------|------------------------|------------------------|------------------------|
-| **Cookies**         | ✅ ABE                | ✅ ABE                | ✅ ABE                | ✅ ABE                |
-| **Passwords**       | ✅ ABE                | ✅ ABE                | ✅ ABE                | ✅ ABE                |
-| **Payment Methods** | ✅ ABE                | ✅ ABE                | ✅ ABE                | ✅ ABE                |
-| **IBANs**           | ✅ ABE                | ❌ N/A                | ✅ ABE                | ✅ ABE                |
+| **Cookies**         | ✅ ABE / DPAPI        | ✅ ABE / DPAPI        | ✅ ABE                | ✅ ABE                |
+| **Passwords**       | ✅ ABE / DPAPI        | ✅ ABE / DPAPI        | ✅ ABE                | ✅ ABE                |
+| **Payment Methods** | ✅ ABE / DPAPI        | ✅ ABE / DPAPI        | ✅ ABE                | ✅ ABE                |
+| **IBANs**           | ✅ ABE / DPAPI        | ❌ N/A                | ✅ ABE                | ✅ ABE                |
 | **Auth Tokens**     | ✅ Google             | ❌ N/A                | ❌ N/A                | ❌ N/A                |
+
+> **Output file names:** cookies → `cookies.json`, passwords → `passwords.json` / `passwords_account.json`, payment methods → `cards.json`, IBANs → `iban.json`, auth tokens → `tokens.json`. All files are placed under `output/<BrowserName>/<ProfileName>/`.
 
 ## 🔬 Technical Workflow
 

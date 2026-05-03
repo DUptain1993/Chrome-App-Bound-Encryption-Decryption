@@ -2,6 +2,25 @@
 
 ## Changelog
 
+### v0.21.0
+
+* **Legacy DPAPI Fallback (v10 Support)**: The tool now falls back to decrypting the legacy DPAPI-backed key (`encrypted_key` in Local State) when no App-Bound Encryption key (`app_bound_encrypted_key`) is present.
+  * Fixes browsers with ABE explicitly disabled (e.g. via Group Policy) that would previously show "Browser uses legacy DPAPI encryption (App-Bound Encryption not enabled)" and extract nothing.
+  * `CryptUnprotectData` is used to unwrap the 32-byte AES key from the DPAPI blob (strips the 5-byte `"DPAPI"` prefix before decryption).
+  * Resolves issue #253 (Edge reporting legacy DPAPI even though data exists) and issue #243 (payment/card data not extracted when saved before ABE rollout).
+
+* **v10 Prefix Support in AES-GCM Decryption**: `AesGcm::Decrypt` now accepts both `"v20"` (App-Bound Encryption) and `"v10"` (legacy DPAPI-backed) encrypted blobs.
+  * The caller receives an `isLegacyV10` flag so downstream code can make prefix-aware decisions.
+
+* **Cookie Header Stripping Fix**: v20 (ABE) cookies carry a 32-byte metadata header before the actual value after decryption; v10 (legacy DPAPI) cookies do not.
+  * Previously, the 32-byte strip was applied unconditionally, corrupting the start of long v10 cookie values.
+  * Now the header is only stripped when `isLegacyV10 == false`.
+
+* **Space-Tolerant JSON Key Lookup**: `GetEncryptedKeyByName` now accepts both compact (`"key":"value"`) and spaced (`"key": "value"`) JSON formats when reading `Local State`.
+  * Prevents missed keys on browsers that format their JSON with whitespace.
+
+* **Legacy DPAPI Key Display**: When a DPAPI key is used, the console now prints `Legacy DPAPI Encryption Key (v10)` (in amber) instead of the green `App-Bound Encryption Key` banner, making the encryption mode immediately visible.
+
 ### v0.20.0
 
 * **Critical Stealth Fix: Bootstrap Direct Syscalls** (thanks [@wrapdavid](https://github.com/wrapdavid) for the sharp-eyed report!): The reflective loader's bootstrap now correctly invokes direct syscalls for `NtAllocateVirtualMemory` and `NtProtectVirtualMemory` through the linked `SyscallTrampoline` assembly function.
